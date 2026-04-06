@@ -1,3 +1,4 @@
 *.sh text eol=lf
 flake.nix text eol=lf
 Dockerfile text eol=lf
+* text eol=lf

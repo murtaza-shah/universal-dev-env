@@ -1,44 +1,68 @@
-FROM debian:stable-slim
+FROM debian:13-slim
 
-# 1. Install minimal bootstrap dependencies
+ARG USERNAME=dev
+ARG USER_UID=1000
+ARG USER_GID=1000
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl git xz-utils sudo ca-certificates \
+    bash-completion \
+    build-essential \
+    ca-certificates \
+    curl \
+    fd-find \
+    fzf \
+    git \
+    jq \
+    less \
+    locales \
+    procps \
+    python3 \
+    python3-pip \
+    ripgrep \
+    sudo \
+    unzip \
+    xz-utils \
+    zip \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Setup the non-root 'dev' user
-RUN useradd -m -s /bin/bash dev \
-    && echo "dev ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dev
+# Make `fd` available (Debian ships it as `fdfind`)
+RUN ln -sf /usr/bin/fdfind /usr/local/bin/fd
 
-# 3. Install Determinate Nix
-RUN curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | \
-    sh -s -- install linux --init none --no-confirm
+# Create a non-root user for daily development
+RUN groupadd --gid ${USER_GID} ${USERNAME} \
+    && useradd --uid ${USER_UID} --gid ${USER_GID} -m -s /bin/bash ${USERNAME} \
+    && usermod -aG sudo ${USERNAME} \
+    && echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USERNAME}
 
-# 4. Configure Nix
-ENV PATH="/nix/var/nix/profiles/default/bin:${PATH}"
-RUN mkdir -p /etc/nix && echo "trusted-users = root dev" >> /etc/nix/nix.conf
-RUN chown -R dev:dev /nix/var/nix
+WORKDIR /workspace
 
-# 5. Prepare the Application directory
-WORKDIR /opt/universal-nvim
-# Explicitly COPY only what exists
-COPY flake.nix /opt/universal-nvim/
-COPY scripts/update-nvim-config.sh /usr/local/bin/
-COPY docker-entrypoint.sh /usr/local/bin/
+# Copy tool versions early so Docker can cache installs when app code changes
+COPY --chown=${USERNAME}:${USERNAME} mise.toml /workspace/mise.toml
 
-RUN chmod +x /usr/local/bin/update-nvim-config.sh /usr/local/bin/docker-entrypoint.sh
+USER ${USERNAME}
 
-# 6. Pre-initialize the Nix Store
-# This will generate the flake.lock INSIDE the image build context
-RUN nix --extra-experimental-features "nix-command flakes" \
-    develop . --impure --command true
+ENV HOME=/home/${USERNAME} \
+    PATH=/home/${USERNAME}/.local/bin:/home/${USERNAME}/.local/share/mise/shims:${PATH}
 
-# 7. Finalize home directory
-RUN mkdir -p /home/dev/.local/share/nvim /home/dev/.local/state/nvim /home/dev/.cache/nvim \
-    && chown -R dev:dev /opt/universal-nvim /home/dev
+# Install mise and activate it for interactive shells
+RUN curl https://mise.run | sh
+RUN echo 'eval "$(~/.local/bin/mise activate bash)"' >> ${HOME}/.bashrc \
+    && echo '' >> ${HOME}/.bashrc \
+    && echo '# Reminder when opening an interactive shell in the container' >> ${HOME}/.bashrc \
+    && echo 'if [[ $- == *i* ]]; then echo "Remember to set OPENCODE_API_KEY for LLM use"; fi' >> ${HOME}/.bashrc
 
-USER dev
-ENV USER=dev
-ENV HOME=/home/dev
-ENV WORKSPACE=/workspace
+# Install toolchain declared in mise.toml
+RUN cd /workspace && ~/.local/bin/mise trust && ~/.local/bin/mise install
 
-ENTRYPOINT ["docker-entrypoint.sh"]
+# Install pi CLI with npm from the mise-managed node
+RUN ~/.local/bin/mise exec -- npm install -g @mariozechner/pi-coding-agent
+
+# Install your Neovim config
+RUN mkdir -p ${HOME}/.config \
+    && git clone --depth=1 https://github.com/murtaza-shah/nvim-config.git ${HOME}/.config/nvim
+
+CMD ["bash", "-l"]
