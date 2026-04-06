@@ -31,6 +31,12 @@ With compose:
 docker compose run --rm dev
 ```
 
+To mount an arbitrary directory instead of the compose file's directory:
+
+```bash
+PROJECT_DIR=/path/to/your/project docker compose run --rm dev
+```
+
 Without compose:
 
 ```bash

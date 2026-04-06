@@ -10,7 +10,7 @@ services:
     container_name: personal-dev-env
     working_dir: /workspace
     volumes:
-      - .:/workspace
+      - ${PROJECT_DIR:-.}:/workspace
     stdin_open: true
     tty: true
     command: bash -l
