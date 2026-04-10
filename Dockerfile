@@ -40,8 +40,9 @@ RUN groupadd --gid ${USER_GID} ${USERNAME} \
 
 WORKDIR /workspace
 
-# Copy tool versions early so Docker can cache installs when app code changes
-COPY --chown=${USERNAME}:${USERNAME} mise.toml /workspace/mise.toml
+# Bake tool versions into the global mise config so they're always available,
+# even when /workspace is mounted over. Per-project mise.toml can override.
+COPY --chown=${USERNAME}:${USERNAME} mise.toml /home/${USERNAME}/.config/mise/config.toml
 
 USER ${USERNAME}
 
@@ -56,7 +57,7 @@ RUN echo 'eval "$(~/.local/bin/mise activate bash)"' >> ${HOME}/.bashrc \
     && echo 'if [[ $- == *i* ]]; then echo "Remember to set OPENCODE_API_KEY for LLM use"; fi' >> ${HOME}/.bashrc
 
 # Install toolchain declared in mise.toml
-RUN cd /workspace && ~/.local/bin/mise trust && ~/.local/bin/mise install
+RUN ~/.local/bin/mise trust --all && ~/.local/bin/mise install
 
 # Install pi CLI with npm from the mise-managed node
 RUN ~/.local/bin/mise exec -- npm install -g @mariozechner/pi-coding-agent
